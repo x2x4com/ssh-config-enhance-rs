@@ -6,18 +6,18 @@ use clap::Parser;
 use prettytable::{Table, row, format};
 use directories::UserDirs;
 use crossterm::{
-    terminal::{EnterAlternateScreen, LeaveAlternateScreen, ClearType, Clear}, 
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen, ClearType}, 
     ExecutableCommand, 
     // event, 
-    execute,
+    // execute,
     style::{Attribute, Color, Stylize},
     QueueableCommand
 };
 use std::error::Error;
 use std::process::{exit, Command};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
-use ctrlc::set_handler;
+// use std::sync::atomic::{AtomicBool, Ordering};
+// use std::sync::Arc;
+// use ctrlc::set_handler;
 
 #[derive(Parser, Debug)]
 #[clap(version = "3.3", about = "SSH配置管理工具")]
@@ -28,8 +28,8 @@ struct Cli {
     #[clap(short = 't', long, help = "按标签过滤服务器")]
     tags: Option<String>,
     
-    #[clap(long, help = "使用终端TEXT", default_value_t = false)]
-    text: bool,
+    #[clap(long, help = "Use choose feature", default_value_t = false)]
+    choose: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -45,18 +45,18 @@ struct ServerConfig {
 fn main() -> Result<(), Box<dyn Error>> {
     let args = Cli::parse();
 
-    let running = Arc::new(AtomicBool::new(true));
-    let r = running.clone();
-    set_handler(move || {
-        r.store(false, Ordering::SeqCst);
-        println!("\n收到退出信号，正在退出...");
-        // disable_raw_mode().expect("无法禁用原始模式");
-        // execute!(std::io::stdout(), EnableLineWrap).expect("无法启用行换行");
-        execute!(std::io::stdout(), LeaveAlternateScreen).expect("Can not leave alternate screen");
-        execute!(std::io::stdout(), Clear(ClearType::All)).expect("无法清除屏幕");
-        execute!(std::io::stdout(), crossterm::cursor::Show).expect("无法显示光标");
-        std::process::exit(0);
-    }).expect("设置Ctrl+C处理失败");
+    // let running = Arc::new(AtomicBool::new(true));
+    // let r = running.clone();
+    // set_handler(move || {
+    //     r.store(false, Ordering::SeqCst);
+    //     println!("\n收到退出信号，正在退出...");
+    //     // disable_raw_mode().expect("无法禁用原始模式");
+    //     // execute!(std::io::stdout(), EnableLineWrap).expect("无法启用行换行");
+    //     execute!(std::io::stdout(), LeaveAlternateScreen).expect("Can not leave alternate screen");
+    //     execute!(std::io::stdout(), Clear(ClearType::All)).expect("无法清除屏幕");
+    //     execute!(std::io::stdout(), crossterm::cursor::Show).expect("无法显示光标");
+    //     std::process::exit(0);
+    // }).expect("设置Ctrl+C处理失败");
     
     // 获取SSH配置文件路径
     let user_dirs = UserDirs::new().ok_or("无法获取用户目录")?;
@@ -69,7 +69,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let filtered = filter_servers(&servers, &args);
     let selection: usize;
     // 显示服务器列表
-    if !args.text {
+    if args.choose {
         selection = display_curses(&filtered)?;
     } else {
         display_table(&filtered)?;
@@ -232,17 +232,18 @@ fn display_table(servers: &[ServerConfig]) -> Result<(), Box<dyn Error>> {
 fn prompt_selection(filtered: &[ServerConfig]) -> Result<usize, Box<dyn Error>> {
     use std::io::{self, Write};
     
-    let mut input = String::new();
-    print!("请输入要连接的服务器ID (0-{}): ", filtered.len().saturating_sub(1));
-    io::stdout().flush()?;
-    io::stdin().read_line(&mut input)?;
-    let selection = input.trim().parse()?;
-    
-    if selection >= filtered.len() {
-        return Err(format!("ID 必须在 0-{} 之间", filtered.len().saturating_sub(1)).into());
+    loop {
+        let mut input = String::new();
+        print!("请输入要连接的服务器ID (0-{}): ", filtered.len().saturating_sub(1));
+        io::stdout().flush()?;
+        io::stdin().read_line(&mut input)?;
+        
+        match input.trim().parse() {
+            Ok(selection) if selection < filtered.len() => return Ok(selection),
+            Ok(_) => eprintln!("ID 必须在 0-{} 之间，请重新输入", filtered.len().saturating_sub(1)),
+            Err(_) => eprintln!("无效的数字输入，请重新输入"),
+        }
     }
-    
-    Ok(selection)
 }
 
 fn display_curses(servers: &[ServerConfig]) -> Result<usize, Box<dyn Error>> {
@@ -298,26 +299,41 @@ fn display_curses(servers: &[ServerConfig]) -> Result<usize, Box<dyn Error>> {
         // 处理键盘事件
         if crossterm::event::poll(std::time::Duration::from_millis(100))? {
             if let crossterm::event::Event::Key(event) = crossterm::event::read()? {
-                match event.code {
-                    crossterm::event::KeyCode::Up => {
+                match event {
+                    crossterm::event::KeyEvent {
+                        code: crossterm::event::KeyCode::Up,
+                        ..
+                    } => {
                         if selection > 0 {
                             selection -= 1;
                         }
                     }
-                    crossterm::event::KeyCode::Down => {
+                    crossterm::event::KeyEvent {
+                        code: crossterm::event::KeyCode::Down,
+                        ..
+                    } => {
                         if selection < servers.len() - 1 {
                             selection += 1;
                         }
                     }
-                    crossterm::event::KeyCode::Enter => break,
-                    crossterm::event::KeyCode::Esc => {
-                        //selection = 0;
+                    crossterm::event::KeyEvent {
+                        code: crossterm::event::KeyCode::Enter,
+                        ..
+                    } => break,
+                    crossterm::event::KeyEvent {
+                        code: crossterm::event::KeyCode::Esc,
+                        ..
+                    } |
+                    crossterm::event::KeyEvent {
+                        code: crossterm::event::KeyCode::Char('c'),
+                        modifiers: crossterm::event::KeyModifiers::CONTROL,
+                        ..
+                    } => {
                         stdout.execute(LeaveAlternateScreen)?;
                         crossterm::terminal::disable_raw_mode()?;
                         stdout.queue(crossterm::cursor::Show)?;
                         println!("退出程序");
                         exit(0);
-                        // break;
                     }
                     _ => {}
                 }

@@ -6,14 +6,18 @@ use clap::Parser;
 use prettytable::{Table, row, format};
 use directories::UserDirs;
 use crossterm::{
-    terminal::{EnterAlternateScreen, LeaveAlternateScreen, ClearType}, 
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen, ClearType, Clear}, 
     ExecutableCommand, 
     // event, 
+    execute,
     style::{Attribute, Color, Stylize},
     QueueableCommand
 };
 use std::error::Error;
-use std::process::Command;
+use std::process::{exit, Command};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use ctrlc::set_handler;
 
 #[derive(Parser, Debug)]
 #[clap(version = "3.3", about = "SSH配置管理工具")]
@@ -40,6 +44,19 @@ struct ServerConfig {
 
 fn main() -> Result<(), Box<dyn Error>> {
     let args = Cli::parse();
+
+    let running = Arc::new(AtomicBool::new(true));
+    let r = running.clone();
+    set_handler(move || {
+        r.store(false, Ordering::SeqCst);
+        println!("\n收到退出信号，正在退出...");
+        // disable_raw_mode().expect("无法禁用原始模式");
+        // execute!(std::io::stdout(), EnableLineWrap).expect("无法启用行换行");
+        execute!(std::io::stdout(), LeaveAlternateScreen).expect("Can not leave alternate screen");
+        execute!(std::io::stdout(), Clear(ClearType::All)).expect("无法清除屏幕");
+        execute!(std::io::stdout(), crossterm::cursor::Show).expect("无法显示光标");
+        std::process::exit(0);
+    }).expect("设置Ctrl+C处理失败");
     
     // 获取SSH配置文件路径
     let user_dirs = UserDirs::new().ok_or("无法获取用户目录")?;
@@ -234,7 +251,7 @@ fn display_curses(servers: &[ServerConfig]) -> Result<usize, Box<dyn Error>> {
         // 绘制标题
         stdout.queue(crossterm::cursor::MoveTo(0, 0))?;
         stdout.queue(crossterm::style::PrintStyledContent(
-            crossterm::style::style(" SSH服务器列表 (↑/↓选择，↲确认) ")
+            crossterm::style::style(" SSH服务器列表 (↑/↓选择，↲确认, ESC退出) ")
                 .with(Color::DarkGreen)
         ))?;
         
@@ -249,11 +266,13 @@ fn display_curses(servers: &[ServerConfig]) -> Result<usize, Box<dyn Error>> {
                 ))?;
             }
             
-            let line = format!(" {:2} {:<25} {:<15} {:<20}",
+            let line = format!("| {:2} | {:<50} | {:<20} | {:<50} | {:<50} |",
                 i,
-                server.host_tag,
-                format!("{}@{}", server.user, server.hostname),
-                format!(":{}", server.port)
+                //server.host_tag,
+                format!("{}@{}:{}", server.user, server.hostname, server.port),
+                server.group,
+                server.tags,
+                server.host_tag
             );
             
             stdout.queue(crossterm::style::Print(line))?;
@@ -283,8 +302,13 @@ fn display_curses(servers: &[ServerConfig]) -> Result<usize, Box<dyn Error>> {
                     }
                     crossterm::event::KeyCode::Enter => break,
                     crossterm::event::KeyCode::Esc => {
-                        selection = 0;
-                        break;
+                        //selection = 0;
+                        stdout.execute(LeaveAlternateScreen)?;
+                        crossterm::terminal::disable_raw_mode()?;
+                        stdout.queue(crossterm::cursor::Show)?;
+                        println!("退出程序");
+                        exit(0);
+                        // break;
                     }
                     _ => {}
                 }
@@ -293,10 +317,8 @@ fn display_curses(servers: &[ServerConfig]) -> Result<usize, Box<dyn Error>> {
     }
     
     // 恢复终端状态
-    stdout.execute(crossterm::terminal::LeaveAlternateScreen)?;
-    crossterm::terminal::disable_raw_mode()?;
-
     stdout.execute(LeaveAlternateScreen)?;
+    crossterm::terminal::disable_raw_mode()?;
     stdout.queue(crossterm::cursor::Show)?;
     
     Ok(selection)
@@ -305,13 +327,14 @@ fn display_curses(servers: &[ServerConfig]) -> Result<usize, Box<dyn Error>> {
 fn connect_to_server(server: &ServerConfig) -> Result<(), Box<dyn Error>> {
     // 实现SSH连接逻辑
     // println!("info: {:#?}", server);
-    println!("Connecting to {}@{}:{}", server.user, server.hostname, server.port);
+    println!("Connecting to {}@{}:{}(by {})", server.user, server.hostname, server.port, server.host_tag);
     // 这里可以使用ssh命令或其他库来实现实际的连接
     // 例如使用 std::process::Command 来调用 ssh 命令
     
     let status = Command::new("ssh")
-        .arg("-p").arg(server.port.to_string())
-        .arg(format!("{}@{}", server.user, server.hostname))
+        //.arg("-p").arg(server.port.to_string())
+        //.arg(format!("{}@{}", server.user, server.hostname))
+        .arg(&server.host_tag)
         .status()?;
     if !status.success() {
         return Err(format!("SSH Failed: {}", status).into());

@@ -28,7 +28,7 @@ struct Cli {
     #[clap(short = 't', long, help = "按标签过滤服务器")]
     tags: Option<String>,
     
-    #[clap(long, help = "Use choose feature", default_value_t = false)]
+    #[clap(short = 'c', long, help = "Use choose feature", default_value_t = false)]
     choose: bool,
 }
 
@@ -253,11 +253,10 @@ fn display_curses(servers: &[ServerConfig]) -> Result<usize, Box<dyn Error>> {
     
     let mut selection = 0;
     let _ = crossterm::terminal::size()?; // 明确忽略未使用变量
-    
+    stdout.queue(crossterm::cursor::Hide)?;
+    stdout.queue(crossterm::terminal::Clear(ClearType::All))?;
+
     loop {
-        stdout.queue(crossterm::cursor::Hide)?;
-        stdout.queue(crossterm::terminal::Clear(ClearType::All))?;
-        
         // 绘制标题
         stdout.queue(crossterm::cursor::MoveTo(0, 0))?;
         stdout.queue(crossterm::style::PrintStyledContent(

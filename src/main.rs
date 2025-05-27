@@ -101,8 +101,8 @@ fn parse_ssh_config(path: &Path) -> Result<Vec<ServerConfig>, Box<dyn Error>> {
         user: String::new(),
         hostname: String::new(),
         port: 22,
-        group: "UNDEFINED".to_string(),
-        tags: "UNDEFINED".to_string(),
+        group: String::new(),
+        tags: String::new(),
     };
     
     let mut current_host = String::new();
@@ -128,6 +128,8 @@ fn parse_ssh_config(path: &Path) -> Result<Vec<ServerConfig>, Box<dyn Error>> {
             current.user.clear();
             current.hostname.clear();
             current.port = 22;
+            current.group.clear();  // 重置group
+            current.tags.clear();   // 重置tags
             continue;
         }
 
@@ -167,8 +169,8 @@ fn filter_servers(servers: &[ServerConfig], args: &Cli) -> Vec<ServerConfig> {
     
     for server in servers {
         // 处理未定义的group和tags
-        let server_group = if server.group.is_empty() { "UNDEFINED" } else { &server.group };
-        let server_tags = if server.tags.is_empty() { "UNDEFINED" } else { &server.tags };
+        let server_group = &server.group;
+        let server_tags = &server.tags;
         
         // 实现过滤逻辑
         if args.group.as_deref() == Some("ALL") {
@@ -196,8 +198,15 @@ fn filter_servers(servers: &[ServerConfig], args: &Cli) -> Vec<ServerConfig> {
         .iter()
         .filter(|s| !s.host_tag.is_empty())
         .filter(|s| {
-            args.group.as_deref().map_or(true, |g| s.group.contains(g)) &&
-            args.tags.as_deref().map_or(true, |t| s.tags.contains(t))
+            let has_annotations = !s.group.is_empty() || !s.tags.is_empty();
+            // 只有当有注释时才进行过滤匹配，无注释条目自动排除
+            // 当且仅当满足以下条件时显示：
+            // 1. 存在group或tags注释
+            // 2. 如果指定了group参数，必须严格匹配非空group内容
+            // 3. 如果指定了tags参数，必须严格匹配非空tags内容
+            has_annotations
+            && (args.group.as_ref().map_or(true, |g| !s.group.is_empty() && s.group.contains(g)))
+            && (args.tags.as_ref().map_or(true, |t| !s.tags.is_empty() && s.tags.contains(t)))
         })
         .cloned()
         .collect::<Vec<_>>()
@@ -211,8 +220,8 @@ fn display_table(servers: &[ServerConfig]) -> Result<(), Box<dyn Error>> {
         t.add_row(row![
             i.to_string(),
             format!("{}@{}:{}", server.user, server.hostname, server.port),
-            server.group.clone(),
-            server.tags.clone(),
+            if server.group.is_empty() { "N/A" } else { &server.group }.to_string(),
+            if server.tags.is_empty() { "N/A" } else { &server.tags }.to_string(),
             server.host_tag.clone(),
         ]);
     }
@@ -270,8 +279,8 @@ fn display_curses(servers: &[ServerConfig]) -> Result<usize, Box<dyn Error>> {
                 i,
                 //server.host_tag,
                 format!("{}@{}:{}", server.user, server.hostname, server.port),
-                server.group,
-                server.tags,
+                if server.group.is_empty() { "" } else { &server.group },
+                if server.tags.is_empty() { "" } else { &server.tags },
                 server.host_tag
             );
             

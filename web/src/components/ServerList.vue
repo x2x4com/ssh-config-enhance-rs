@@ -1,11 +1,20 @@
 <template>
   <div class="server-management">
+    <!-- 消息模态框 -->
+    <MessageModal
+      v-if="showMessageModal"
+      :title="modalTitle"
+      :message="modalMessage"
+      @close="showMessageModal = false"
+    />
+    
     <!-- 全局配置区域 -->
     <div class="global-config-section">
       <h3>全局配置</h3>
       <div class="config-card">
-        <div v-for="(value, key) in globalConfig" :key="key" class="config-item">
-          <strong>{{ key }}:</strong> {{ value }}
+        <div v-for="(item, index) in configData.global" :key="index" class="config-item">
+          <strong>{{ item[0] }}:</strong> {{ item[1] }}
+          <button @click="removeGlobalConfig(index)" class="delete-button">删除</button>
         </div>
       </div>
       <button @click="showAddGlobalConfig = true" class="add-button">
@@ -15,42 +24,110 @@
 
     <!-- 主机列表区域 -->
     <div class="server-list-section">
+
       <div class="section-header">
         <h3>服务器列表</h3>
-        <button @click="showAddServerForm = true" class="add-button">
-          添加新主机
-        </button>
+        <div>
+          <button @click="showAddServerForm = true" class="add-button">
+            添加新主机
+          </button>
+          <!--button @click="saveConfig" class="save-button">保存配置</button-->
+        </div>
+      </div>
+
+      <!-- 过滤区域 -->
+      <div class="filter-section">
+        <div class="filter-control">
+          <label for="group-filter">按组过滤:</label>
+          <select id="group-filter" v-model="filterGroup" @change="() => loadConfig()">
+            <option value="">全部</option>
+            <option v-for="group in availableGroups" :key="group" :value="group">
+              {{ group }}
+            </option>
+          </select>
+        </div>
+        <div class="filter-control">
+          <label for="tag-filter">按标签过滤:</label>
+          <select id="tag-filter" v-model="filterTag" @change="() => loadConfig()">
+            <option value="">全部</option>
+            <option v-for="tag in availableTags" :key="tag" :value="tag">
+              {{ tag }}
+            </option>
+          </select>
+        </div>
+        <button @click="resetFilters" class="reset-button">重置过滤</button>
+      </div>
+
+      
+      
+      <!-- 桌面视图：表格布局 -->
+      <div class="desktop-view">
+        <table class="server-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>主机标签</th>
+              <th>连接信息</th>
+              <th>组</th>
+              <th>标签</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="(server, index) in configData.servers" :key="index">
+              <td>{{ index }}</td>
+              <td>{{ server.host_tag }}</td>
+              <td>{{ server.user }}@{{ server.hostname }}:{{ server.port }}</td>
+              <td>{{ server.group || 'N/A' }}</td>
+              <td>
+                <span v-for="(tag, index) in server.tags" :key="index" class="tag">
+                  {{ tag }}
+                </span>
+              </td>
+              <td>
+                <button @click="connect(server)" class="add-button">连接</button>
+                <button @click="edit(server)" class="save-button">编辑</button>
+                <button @click="removeServer(index)" class="delete-button">删除</button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
       </div>
       
-      <table class="server-table">
-        <thead>
-          <tr>
-            <th>ID</th>
-            <th>主机标签</th>
-            <th>连接信息</th>
-            <th>组</th>
-            <th>标签</th>
-            <th>操作</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="(server, index) in servers" :key="index">
-            <td>{{ index }}</td>
-            <td>{{ server.host_tag }}</td>
-            <td>{{ server.user }}@{{ server.hostname }}:{{ server.port }}</td>
-            <td>{{ server.group || 'N/A' }}</td>
-            <td>
-              <span v-for="(tag, index) in server.tags" :key="index" class="tag">
-                {{ tag }}
+      <!-- 移动视图：卡片布局 -->
+      <div class="mobile-view">
+        <div v-for="(server, index) in configData.servers" :key="index" class="server-card">
+          <div class="card-header">
+            <div class="server-id">ID: {{ index }}</div>
+            <div class="server-tag">{{ server.host_tag }}</div>
+          </div>
+          
+          <div class="card-body">
+            <div class="info-row">
+              <span class="label">连接信息:</span>
+              <span>{{ server.user }}@{{ server.hostname }}:{{ server.port }}</span>
+            </div>
+            <div class="info-row">
+              <span class="label">组:</span>
+              <span>{{ server.group || 'N/A' }}</span>
+            </div>
+            <div class="info-row">
+              <span class="label">标签:</span>
+              <span>
+                <span v-for="(tag, tagIndex) in server.tags" :key="tagIndex" class="tag">
+                  {{ tag }}
+                </span>
               </span>
-            </td>
-            <td>
-              <button @click="connect(server)">连接</button>
-              <button @click="edit(server)">编辑</button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
+            </div>
+          </div>
+          
+          <div class="card-actions">
+            <button @click="connect(server)" class="add-button">连接</button>
+            <button @click="edit(server)" class="save-button">编辑</button>
+            <button @click="removeServer(index)" class="delete-button">删除</button>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- 添加新主机表单 -->
@@ -106,36 +183,65 @@
         </form>
       </div>
     </div>
+
+    <!-- 消息提示模态框 -->
+    <div v-if="showMessageModal" class="modal">
+      <div class="modal-content message-modal">
+        <div class="message-header">
+          <h4>{{ messageModal.title }}</h4>
+        </div>
+        <div class="message-body">
+          <p>{{ messageModal.message }}</p>
+        </div>
+        <div class="message-footer">
+          <button @click="closeMessageModal" class="confirm-button">确认</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
+// import { core } from '@tauri-apps/api'
+import * as tauriapi from '@tauri-apps/api';
+// const { invoke } = core.invoke;
 
-// 临时静态数据，后续替换为API调用
-const servers = ref([
-  {
-    host_tag: 'example1',
-    user: 'user1',
-    hostname: 'host1.example.com',
-    port: 22,
-    group: '开发服务器',
-    tags: ['dev', 'test']
-  },
-  {
-    host_tag: 'example2',
-    user: 'user2',
-    hostname: 'host2.example.com',
-    port: 22,
-    group: '生产服务器',
-    tags: ['prod']
-  }
-])
-
-// 全局配置数据
-const globalConfig = ref({
-  'ServerAliveInterval': '30'
+// 配置数据
+const configData = ref({
+  global: [],
+  servers: []
 })
+
+// 过滤状态
+const filterGroup = ref('')
+const filterTag = ref('')
+
+// 计算可用分组和标签
+const availableGroups = computed(() => {
+  const groups = new Set()
+  configData.value.servers.forEach(server => {
+    if (server.group) groups.add(server.group)
+  })
+  return Array.from(groups).sort()
+})
+
+const availableTags = computed(() => {
+  const tags = new Set()
+  configData.value.servers.forEach(server => {
+    if (server.tags) {
+      server.tags.forEach(tag => tags.add(tag))
+    }
+  })
+  return Array.from(tags).sort()
+})
+
+// 重置过滤器
+function resetFilters() {
+  filterGroup.value = ''
+  filterTag.value = ''
+  loadConfig()
+}
 
 // 新服务器表单状态
 const showAddServerForm = ref(false)
@@ -155,24 +261,78 @@ const newConfig = ref({
   value: ''
 })
 
-function connect(server) {
+// 消息模态框状态
+const showMessageModal = ref(false)
+const messageModal = ref({
+  title: '',
+  message: ''
+})
+
+// 显示消息模态框
+function showMessage(title, message) {
+  messageModal.value = { title, message }
+  showMessageModal.value = true
+}
+
+// 关闭消息模态框
+function closeMessageModal() {
+  showMessageModal.value = false
+}
+
+// 加载配置
+async function loadConfig() {
+  try {
+    const params = {
+      group: filterGroup.value || null,
+      tags: filterTag.value || null
+    }
+    
+    console.log('Sending filter params:', params) // 调试参数
+    const response = await tauriapi.core.invoke('get_servers', params)
+    console.log('Received filtered data:', response) // 调试响应
+    
+    // 确保响应式更新
+    configData.value = {
+      global: [...response.global],
+      servers: [...response.servers]
+    }
+  } catch (error) {
+    showMessage('错误', `加载配置失败: ${error}`)
+  }
+}
+
+// 保存配置
+async function saveConfig() {
+  try {
+    await tauriapi.core.invoke('save_servers', { config: configData.value })
+    showMessage('成功', '配置保存成功!')
+  } catch (error) {
+    console.error('保存配置失败:', error)
+    showMessage('错误', '保存配置失败: ' + error)
+  }
+}
+
+// 连接服务器
+async function connect(server) {
   console.log('连接到服务器:', server.host_tag)
   // TODO: 调用Tauri命令连接
 }
 
+// 编辑服务器
 function edit(server) {
   console.log('编辑服务器:', server.host_tag)
   // TODO: 实现编辑功能
 }
 
-function addNewServer() {
+// 添加新主机
+async function addNewServer() {
   // 转换标签输入为数组
   const tags = newServer.value.tagsInput
     ? newServer.value.tagsInput.split(',').map(tag => tag.trim())
     : []
   
   // 添加新服务器
-  servers.value.push({
+  configData.value.servers.push({
     host_tag: newServer.value.host_tag,
     user: newServer.value.user,
     hostname: newServer.value.hostname,
@@ -185,15 +345,34 @@ function addNewServer() {
   resetNewServerForm()
   showAddServerForm.value = false
   
-  // TODO: 调用后端API保存配置
+  // 保存配置
+  await saveConfig()
 }
 
-function addGlobalConfig() {
-  globalConfig.value[newConfig.value.key] = newConfig.value.value
+// 添加全局配置
+async function addGlobalConfig() {
+  configData.value.global.push({
+    0: newConfig.value.key,
+    1: newConfig.value.value
+  })
+  
   newConfig.value = { key: '', value: '' }
   showAddGlobalConfig.value = false
   
-  // TODO: 调用后端API保存全局配置
+  // 保存配置
+  await saveConfig()
+}
+
+// 删除全局配置项
+async function removeGlobalConfig(index) {
+  configData.value.global.splice(index, 1)
+  await saveConfig()
+}
+
+// 删除服务器配置项
+async function removeServer(index) {
+  configData.value.servers.splice(index, 1)
+  await saveConfig()
 }
 
 function resetNewServerForm() {
@@ -206,6 +385,11 @@ function resetNewServerForm() {
     tagsInput: ''
   }
 }
+
+// 组件挂载时加载配置
+onMounted(() => {
+  loadConfig()
+})
 </script>
 
 <style scoped>
@@ -245,6 +429,16 @@ function resetNewServerForm() {
   border-bottom: none;
 }
 
+/* 桌面视图 */
+.desktop-view {
+  display: block;
+}
+
+/* 移动视图 - 默认隐藏 */
+.mobile-view {
+  display: none;
+}
+
 .server-table {
   width: 100%;
   border-collapse: collapse;
@@ -260,6 +454,66 @@ function resetNewServerForm() {
   background-color: #f2f2f2;
 }
 
+/* 服务器卡片样式 */
+.server-card {
+  background-color: #fff;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  margin-bottom: 15px;
+  overflow: hidden;
+}
+
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 15px;
+  background-color: #f8f9fa;
+  border-bottom: 1px solid #eee;
+}
+
+.server-id {
+  font-size: 0.9em;
+  color: #666;
+}
+
+.server-tag {
+  font-weight: bold;
+}
+
+.card-body {
+  padding: 15px;
+}
+
+.info-row {
+  display: flex;
+  margin-bottom: 10px;
+}
+
+.info-row:last-child {
+  margin-bottom: 0;
+}
+
+.label {
+  font-weight: bold;
+  min-width: 80px;
+  margin-right: 10px;
+  color: #333;
+}
+
+.card-actions {
+  display: flex;
+  padding: 10px 15px;
+  background-color: #f8f9fa;
+  border-top: 1px solid #eee;
+}
+
+.card-actions button {
+  margin-right: 10px;
+  padding: 6px 12px;
+  font-size: 0.9em;
+}
+
 .add-button {
   background-color: #4CAF50;
   color: white;
@@ -268,10 +522,40 @@ function resetNewServerForm() {
   border-radius: 4px;
   cursor: pointer;
   font-size: 14px;
+  margin-right: 10px;
 }
 
 .add-button:hover {
   background-color: #45a049;
+}
+
+.save-button {
+  background-color: #2196F3;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.save-button:hover {
+  background-color: #0b7dda;
+}
+
+.delete-button {
+  background-color: #f44336;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  margin-left: 5px;
+}
+
+.delete-button:hover {
+  background-color: #d32f2f;
 }
 
 /* 模态框样式 */
@@ -339,5 +623,149 @@ button[type="submit"] {
   padding: 4px 10px;
   margin-right: 5px;
   font-size: 0.9em;
+}
+
+/* 消息模态框样式 */
+.message-modal {
+  max-width: 400px;
+  text-align: center;
+}
+
+.message-header {
+  padding: 15px 20px 10px;
+  border-bottom: 1px solid #eee;
+}
+
+.message-header h4 {
+  margin: 0;
+  color: #333;
+  font-size: 18px;
+}
+
+.message-body {
+  padding: 20px;
+}
+
+.message-body p {
+  margin: 0;
+  color: #666;
+  line-height: 1.5;
+}
+
+.message-footer {
+  padding: 10px 20px 20px;
+}
+
+.confirm-button {
+  background-color: #2196F3;
+  color: white;
+  border: none;
+  padding: 10px 30px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  min-width: 80px;
+}
+
+.confirm-button:hover {
+  background-color: #0b7dda;
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+  .desktop-view {
+    display: none;
+  }
+  
+  .mobile-view {
+    display: block;
+  }
+  
+  .server-management {
+    gap: 15px;
+  }
+  
+  .global-config-section, .server-list-section {
+    padding: 15px;
+  }
+}
+
+/* 过滤区域样式 */
+.filter-section {
+  padding: 15px;
+  background: #f5f5f5;
+  border-radius: 8px;
+  margin-bottom: 20px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 15px;
+  align-items: center;
+}
+
+.filter-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.filter-control label {
+  font-weight: bold;
+  white-space: nowrap;
+}
+
+.filter-control select {
+  padding: 6px 12px;
+  border-radius: 4px;
+  border: 1px solid #ddd;
+  min-width: 120px;
+}
+
+.reset-button {
+  padding: 6px 12px;
+  background: #e0e0e0;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.reset-button:hover {
+  background: #d0d0d0;
+}
+
+@media (max-width: 480px) {
+  .server-card {
+    margin-bottom: 10px;
+  }
+  
+  .card-header, .card-body, .card-actions {
+    padding: 10px;
+  }
+  
+  .info-row {
+    flex-direction: column;
+    margin-bottom: 8px;
+  }
+  
+  .label {
+    margin-bottom: 3px;
+    min-width: auto;
+  }
+  
+  .section-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  
+  .section-header > div {
+    display: flex;
+    gap: 10px;
+  }
+  
+  .add-button, .save-button {
+    padding: 6px 12px;
+    font-size: 13px;
+  }
 }
 </style>

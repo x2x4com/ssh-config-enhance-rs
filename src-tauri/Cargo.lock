@@ -4093,6 +4093,7 @@ dependencies = [
  "prettytable-rs",
  "regex",
  "serde",
+ "tauri",
  "tauri-build",
 ]
 

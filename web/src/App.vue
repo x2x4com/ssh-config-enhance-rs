@@ -12,8 +12,20 @@ import ServerList from './components/ServerList.vue'
 <style>
 .app {
   font-family: Arial, sans-serif;
-  max-width: 800px;
+  width: 100%;
   margin: 0 auto;
   padding: 20px;
+}
+
+@media (max-width: 768px) {
+  .app {
+    padding: 15px;
+  }
+}
+
+@media (max-width: 480px) {
+  .app {
+    padding: 10px;
+  }
 }
 </style>

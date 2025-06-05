@@ -1,12 +1,12 @@
-use serde::Serialize;
+use serde::{Serialize, Deserialize};
 use std::path::Path;
-use std::fs::File;
-use std::io::BufRead;
+use std::fs::{File, OpenOptions};
+use std::io::{BufRead, BufReader, Write};
 use regex::Regex;
 use std::error::Error;
 use directories::UserDirs;
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServerConfig {
     pub host_tag: String,
     pub user: String,
@@ -16,30 +16,27 @@ pub struct ServerConfig {
     pub tags: Vec<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ParsedConfig {
+    pub global: Vec<(String, String)>,
+    pub servers: Vec<ServerConfig>,
+}
+
 /// 解析SSH配置文件
-pub fn parse_ssh_config(path: &Path) -> Result<Vec<ServerConfig>, Box<dyn Error>> {
+pub fn parse_ssh_config(path: &Path) -> Result<ParsedConfig, Box<dyn Error>> {
     let file = File::open(path)?;
-    let reader = std::io::BufReader::new(file);
+    let reader = BufReader::new(file);
     
     // 预编译正则表达式
     let re_host = Regex::new(r"(?i)^host\s+(\S+)")?;
-    let re_user = Regex::new(r"(?i)^\s*user\s+(\S+)")?;
-    let re_hostname = Regex::new(r"(?i)^\s*hostname\s+(\S+)")?;
-    let re_port = Regex::new(r"(?i)^\s*port\s+(\S+)")?;
+    let re_config = Regex::new(r"(?i)^\s*(\S+)\s+(\S+)")?;
     let re_group = Regex::new(r"(?i)^\s*#\s*group\s+([^\s#]+)")?;
     let re_tags = Regex::new(r"(?i)^\s*#\s*tags\s+([^#]+)")?;
     
+    let mut global_config = Vec::new();
     let mut servers = Vec::new();
-    let mut current = ServerConfig {
-        host_tag: String::new(),
-        user: String::new(),
-        hostname: String::new(),
-        port: 22,
-        group: String::new(),
-        tags: Vec::new(),
-    };
-    
-    let mut current_host = String::new();
+    let mut current = None;
+    let mut in_global_section = false;
     
     for line in reader.lines() {
         let line = line?.trim().to_string();
@@ -51,56 +48,117 @@ pub fn parse_ssh_config(path: &Path) -> Result<Vec<ServerConfig>, Box<dyn Error>
         if let Some(caps) = re_host.captures(&line) {
             let host_tag = &caps[1];
             
-            // 保存前一个有效配置（非通配符）
-            if !current_host.is_empty() && current_host != "*" {
-                servers.push(current.clone());
+            // 保存前一个配置
+            if let Some(server) = current.take() {
+                servers.push(server);
             }
             
-            // 重置临时变量但保留group/tags
-            current_host = host_tag.to_string();
-            current.host_tag = host_tag.to_string();
-            current.user.clear();
-            current.hostname.clear();
-            current.port = 22;
-            current.group.clear();  // 重置group
-            current.tags.clear();   // 重置tags
+            // 检查是否为全局配置
+            if host_tag == "*" {
+                in_global_section = true;
+                continue;
+            }
+            
+            // 创建新服务器配置
+            in_global_section = false;
+            current = Some(ServerConfig {
+                host_tag: host_tag.to_string(),
+                user: String::new(),
+                hostname: String::new(),
+                port: 22,
+                group: String::new(),
+                tags: Vec::new(),
+            });
             continue;
         }
 
-        // 仅在当前Host有效时处理配置项
-        if current_host != "*" {
+        // 处理全局配置项
+        if in_global_section {
+            if let Some(caps) = re_config.captures(&line) {
+                global_config.push((caps[1].to_string(), caps[2].to_string()));
+            }
+            continue;
+        }
+
+        // 处理服务器配置项
+        if let Some(ref mut server) = current {
             if let Some(caps) = re_group.captures(&line) {
-                current.group = caps[1].trim().to_string();
+                server.group = caps[1].trim().to_string();
             }
             else if let Some(caps) = re_tags.captures(&line) {
-                current.tags = caps[1].split_whitespace()
+                server.tags = caps[1].split_whitespace()
                     .filter(|s| !s.is_empty())
                     .map(|s| s.to_string())
                     .collect();
             }
-            else if let Some(caps) = re_user.captures(&line) {
-                current.user = caps[1].trim().to_string();
-            }
-            else if let Some(caps) = re_hostname.captures(&line) {
-                current.hostname = caps[1].trim().to_string();
-            }
-            else if let Some(caps) = re_port.captures(&line) {
-                current.port = caps[1].trim().parse()?;
+            else if let Some(caps) = re_config.captures(&line) {
+                let key = caps[1].to_lowercase();
+                let value = caps[2].to_string();
+                
+                match key.as_str() {
+                    "user" => server.user = value,
+                    "hostname" => server.hostname = value,
+                    "port" => server.port = value.parse().unwrap_or(22),
+                    _ => {} // 忽略其他配置
+                }
             }
         }
     }
     
-    // 保存最后一个有效配置
-    if !current_host.is_empty() && current_host != "*" {
-        servers.push(current);
+    // 保存最后一个配置
+    if let Some(server) = current {
+        servers.push(server);
     }
     
-    Ok(servers)
+    Ok(ParsedConfig { global: global_config, servers })
 }
 
+/// 保存SSH配置
+pub fn save_ssh_config(path: &Path, config: &ParsedConfig) -> Result<(), Box<dyn Error>> {
+    let mut file = OpenOptions::new()
+        .write(true)
+        .truncate(true)
+        .create(true)
+        .open(path)?;
+    
+    // 写入全局配置
+    if !config.global.is_empty() {
+        writeln!(file, "Host *")?;
+        for (key, value) in &config.global {
+            writeln!(file, "    {} {}", key, value)?;
+        }
+        writeln!(file)?;
+    }
+    
+    // 写入服务器配置
+    for server in &config.servers {
+        writeln!(file, "Host {}", server.host_tag)?;
+        if !server.user.is_empty() {
+            writeln!(file, "    User {}", server.user)?;
+        }
+        if !server.hostname.is_empty() {
+            writeln!(file, "    Hostname {}", server.hostname)?;
+        }
+        if server.port != 22 {
+            writeln!(file, "    Port {}", server.port)?;
+        }
+        if !server.group.is_empty() {
+            writeln!(file, "    # Group {}", server.group)?;
+        }
+        if !server.tags.is_empty() {
+            let tags = server.tags.join(" ");
+            writeln!(file, "    # Tags {}", tags)?;
+        }
+        writeln!(file)?;
+    }
+    
+    Ok(())
+}
+
+
 /// 过滤服务器列表
-pub fn filter_servers(servers: &[ServerConfig], group: Option<&str>, tags: Option<&str>) -> Vec<ServerConfig> {
-    servers
+pub fn filter_servers(servers: &ParsedConfig, group: Option<&str>, tags: Option<&str>) -> Vec<ServerConfig> {
+    servers.servers
         .iter()
         .filter(|s| !s.host_tag.is_empty())
         .filter(|s| {

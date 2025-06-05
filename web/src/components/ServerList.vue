@@ -14,6 +14,7 @@
       <div class="config-card">
         <div v-for="(item, index) in configData.global" :key="index" class="config-item">
           <strong>{{ item[0] }}:</strong> {{ item[1] }}
+          <button @click="editGlobalConfig(index)" class="save-button">编辑</button>
           <button @click="removeGlobalConfig(index)" class="delete-button">删除</button>
         </div>
       </div>
@@ -86,7 +87,7 @@
               </td>
               <td>
                 <button @click="connect(server)" class="add-button">连接</button>
-                <button @click="edit(server)" class="save-button">编辑</button>
+                <button @click="edit(server, index)" class="save-button">编辑</button>
                 <button @click="removeServer(index)" class="delete-button">删除</button>
               </td>
             </tr>
@@ -179,7 +180,32 @@
             <label>值:</label>
             <input v-model="newConfig.value" placeholder="例如: 30" required />
           </div>
-          <button type="submit">添加</button>
+          <div class="form-actions">
+            <button @click="showAddGlobalConfig = false" class="delete-button">取消</button>
+            <button type="submit" class="add-button">添加</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- 编辑全局配置表单 -->
+    <div v-if="showEditGlobalConfig" class="modal" style="z-index: 1001;">
+      <div class="modal-content">
+        <span class="close" @click="showEditGlobalConfig = false">&times;</span>
+        <h3>编辑全局配置</h3>
+        <form @submit.prevent="saveEditedGlobalConfig">
+          <div class="form-group">
+            <label>配置项</label>
+            <input v-model="editingGlobalConfig.data.key" required>
+          </div>
+          <div class="form-group">
+            <label>值</label>
+            <input v-model="editingGlobalConfig.data.value" required>
+          </div>
+          <div class="form-actions">
+            <button @click="showEditGlobalConfig = false" class="delete-button">取消</button>
+            <button class="add-button">保存</button>
+          </div>
         </form>
       </div>
     </div>
@@ -198,24 +224,68 @@
         </div>
       </div>
     </div>
+    
+    <!-- 编辑服务器表单 -->
+    <div v-if="showEditServerForm" class="modal" style="z-index: 1001;">
+      <div class="modal-content">
+        <span class="close" @click="showEditServerForm = false">&times;</span>
+        <h3>编辑服务器</h3>
+        <form @submit.prevent="saveEditedServer">
+          <div class="form-group">
+            <label>主机标识</label>
+            <input v-model="editingServer.data.host_tag" required>
+          </div>
+          <div class="form-group">
+            <label>主机名/IP</label>
+            <input v-model="editingServer.data.hostname" required>
+          </div>
+          <div class="form-group">
+            <label>用户名</label>
+            <input v-model="editingServer.data.user" required>
+          </div>
+          <div class="form-group">
+            <label>端口</label>
+            <input v-model="editingServer.data.port" type="number">
+          </div>
+          <div class="form-group">
+            <label>分组</label>
+            <input v-model="editingServer.data.group">
+          </div>
+          <div class="form-group">
+            <label>标签(逗号分隔)</label>
+            <input v-model="editingServer.data.tagsInput">
+          </div>
+          <div class="form-actions">
+            <button @click="showEditServerForm = false" class="delete-button">取消</button>
+            <button class="add-button">保存</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
   </div>
+
+  
 </template>
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-// import { core } from '@tauri-apps/api'
 import * as tauriapi from '@tauri-apps/api';
-// const { invoke } = core.invoke;
 
 // 配置数据
 const configData = ref({
-  global: [],
+  global: [], // 存储格式: [{key: "", value: ""}]
   servers: []
 })
 
 // 过滤状态
 const filterGroup = ref('')
 const filterTag = ref('')
+
+// 检查是否处于过滤状态
+const isFiltered = computed(() => {
+  return filterGroup.value || filterTag.value
+})
 
 // 计算可用分组和标签
 const availableGroups = computed(() => {
@@ -256,9 +326,17 @@ const newServer = ref({
 
 // 新全局配置表单状态
 const showAddGlobalConfig = ref(false)
+const showEditGlobalConfig = ref(false)
 const newConfig = ref({
   key: '',
   value: ''
+})
+const editingGlobalConfig = ref({
+  index: -1,
+  data: {
+    key: '',
+    value: ''
+  }
 })
 
 // 消息模态框状态
@@ -293,8 +371,8 @@ async function loadConfig() {
     
     // 确保响应式更新
     configData.value = {
-      global: [...response.global],
-      servers: [...response.servers]
+      global: response.global,
+      servers: response.servers
     }
   } catch (error) {
     showMessage('错误', `加载配置失败: ${error}`)
@@ -304,12 +382,63 @@ async function loadConfig() {
 // 保存配置
 async function saveConfig() {
   try {
-    await tauriapi.core.invoke('save_servers', { config: configData.value })
+    const configToSave = {
+      global: configData.value.global,
+      servers: configData.value.servers
+    }
+    await tauriapi.core.invoke('save_servers', { config: configToSave })
     showMessage('成功', '配置保存成功!')
   } catch (error) {
     console.error('保存配置失败:', error)
     showMessage('错误', '保存配置失败: ' + error)
   }
+}
+
+// 添加全局配置
+function addGlobalConfig() {
+  if (!newConfig.value.key || !newConfig.value.value) {
+    showMessage('错误', '配置项和值不能为空')
+    return
+  }
+  
+  configData.value.global.push([
+    newConfig.value.key,
+    newConfig.value.value
+  ])
+  
+  newConfig.value = { key: '', value: '' }
+  showAddGlobalConfig.value = false
+  saveConfig()
+}
+
+// 编辑全局配置
+function editGlobalConfig(index) {
+  editingGlobalConfig.value = {
+    index,
+    data: {
+      key: configData.value.global[index][0],
+      value: configData.value.global[index][1]
+    }
+  }
+  showEditGlobalConfig.value = true
+}
+
+// 保存编辑后的全局配置
+async function saveEditedGlobalConfig() {
+  if (editingGlobalConfig.value.index >= 0) {
+    configData.value.global[editingGlobalConfig.value.index] = [
+      editingGlobalConfig.value.data.key,
+      editingGlobalConfig.value.data.value
+    ]
+    showEditGlobalConfig.value = false
+    await saveConfig()
+  }
+}
+
+// 删除全局配置
+async function removeGlobalConfig(index) {
+  configData.value.global.splice(index, 1)
+  await saveConfig()
 }
 
 // 连接服务器
@@ -318,10 +447,71 @@ async function connect(server) {
   // TODO: 调用Tauri命令连接
 }
 
+// 编辑服务器状态
+const showEditServerForm = ref(false)
+const editingServer = ref({
+  index: -1,
+  data: {
+    host_tag: '',
+    hostname: '',
+    user: '',
+    port: 22,
+    group: '',
+    tagsInput: ''
+  }
+})
+
 // 编辑服务器
-function edit(server) {
+function edit(server, index) {
+  if (isFiltered.value) {
+    showMessage('操作禁止', '过滤状态下不能编辑服务器')
+    return
+  }
   console.log('编辑服务器:', server.host_tag)
-  // TODO: 实现编辑功能
+  editingServer.value = {
+    index,
+    data: {
+      ...server,
+      tagsInput: server.tags ? server.tags.join(', ') : ''
+    }
+  }
+  showEditServerForm.value = true
+}
+
+// 保存编辑
+async function saveEditedServer() {
+  console.log('保存:', editingServer.value)
+  // 转换标签输入为数组
+  const tags = editingServer.value.data.tagsInput
+    ? editingServer.value.data.tagsInput.split(',').map(tag => tag.trim())
+    : []
+  
+  // 更新服务器数据
+  configData.value.servers[editingServer.value.index] = {
+    host_tag: editingServer.value.data.host_tag,
+    user: editingServer.value.data.user,
+    hostname: editingServer.value.data.hostname,
+    port: editingServer.value.data.port || 22,
+    group: editingServer.value.data.group,
+    tags: tags
+  }
+  
+  // 重置表单并关闭
+  editingServer.value = {
+    index: -1,
+    data: {
+      host_tag: '',
+      hostname: '',
+      user: '',
+      port: 22,
+      group: '',
+      tagsInput: ''
+    }
+  }
+  showEditServerForm.value = false
+  console.log('保存编辑后的服务器:', configData.value.servers[editingServer.value.index])
+  // 保存配置
+  await saveConfig()
 }
 
 // 添加新主机
@@ -349,28 +539,12 @@ async function addNewServer() {
   await saveConfig()
 }
 
-// 添加全局配置
-async function addGlobalConfig() {
-  configData.value.global.push({
-    0: newConfig.value.key,
-    1: newConfig.value.value
-  })
-  
-  newConfig.value = { key: '', value: '' }
-  showAddGlobalConfig.value = false
-  
-  // 保存配置
-  await saveConfig()
-}
-
-// 删除全局配置项
-async function removeGlobalConfig(index) {
-  configData.value.global.splice(index, 1)
-  await saveConfig()
-}
-
 // 删除服务器配置项
 async function removeServer(index) {
+  if (isFiltered.value) {
+    showMessage('操作禁止', '过滤状态下不能删除服务器')
+    return
+  }
   configData.value.servers.splice(index, 1)
   await saveConfig()
 }

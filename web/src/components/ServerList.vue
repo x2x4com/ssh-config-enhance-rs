@@ -646,30 +646,44 @@ async function saveEditedServer() {
     ? editingServer.value.data.tagsInput.split(',').map(tag => tag.trim())
     : []
   
-  let localForward = null
-  let dynamicForward = null
-  let proxyJump = null
+  // let localForward = null
+  // let proxyJump = null
+
+  if (editingServer.value.data.dynamicForward === '') {
+    editingServer.value.data.dynamicForward = null
+  }
+
+  if (editingServer.value.data.proxyJump === '') {
+    editingServer.value.data.proxyJump = null
+  }
+
+  if (editingServer.value.data.localForward === '') {
+    editingServer.value.data.localForward = null
+  }
+
+  let dynamicForward = editingServer.value.data.dynamicForward
+  let proxyJump = editingServer.value.data.proxyJump
+  let localForward = editingServer.value.data.localForward
 
   if (editingServer.value.data.isEnablePortForward) {
-    dynamicForward = editingServer.value.data.dynamicForward
     console.log('server local forward:', editingServer.value.data.localForward)
-    if (editingServer.value.data.localForward === '' || editingServer.value.data.localForward === null) {
+    if (editingServer.value.data.localForward === null) {
       localForward = null
     } else {
       if (
       (editingServer.value.data.localForward.local_port !== '' || editingServer.value.data.localForward.local_port === null) && 
       (editingServer.value.data.localForward.remote_host !== '' || editingServer.value.data.localForward.remote_host === null) && 
       (editingServer.value.data.localForward.remote_port !== '' || editingServer.value.data.localForward.remote_port === null)) {
-      localForward = {
-        local_port: parseInt(editingServer.value.data.localForward.local_port, 10),
-        remote_host: editingServer.value.data.localForward.remote_host,
-        remote_port: parseInt(editingServer.value.data.localForward.remote_port, 10)
+        localForward = {
+          local_port: parseInt(editingServer.value.data.localForward.local_port, 10),
+          remote_host: editingServer.value.data.localForward.remote_host,
+          remote_port: parseInt(editingServer.value.data.localForward.remote_port, 10)
+        }
       }
-    }
     }
     
     console.log('本地转发配置:', localForward)
-    if (localForward === null && (dynamicForward === null || dynamicForward === '')) {
+    if (localForward === null && dynamicForward === null) {
       showMessage('错误', '转发配置不完整，动态转发或者本地转发二选一必须填写一个')
       return
     }
@@ -722,25 +736,46 @@ async function addNewServer() {
   const tags = newServer.value.tagsInput
     ? newServer.value.tagsInput.split(',').map(tag => tag.trim())
     : []
-  if (newServer.value.localForward.local_port != '') {
-    // change string to int
-    newServer.value.localForward.local_port = parseInt(newServer.value.localForward.local_port, 10)
+
+  if (newServer.value.dynamicForward === '') {
+    newServer.value.dynamicForward = null
   }
-  let localForward = null
-  let dynamicForward = null
-  let proxyJump = null
+
+  if (newServer.value.proxyJump === '') {
+    newServer.value.proxyJump = null
+  }
+
+  if (newServer.value.localForward === '') {
+    newServer.value.localForward = null
+  }
+
+  let dynamicForward = newServer.value.dynamicForward
+  let proxyJump = newServer.value.proxyJump
+  let localForward = newServer.value.localForward
+
+
   if (newServer.value.isEnablePortForward) {
-    dynamicForward = newServer.value.dynamicForward
     console.log('server local forward:', newServer.value.localForward)
-    if (newServer.value.localForward.local_port !== '' && newServer.value.localForward.remote_host !== '' && newServer.value.localForward.remote_port !== '') {
-      localForward = {
-        local_port: parseInt(newServer.value.localForward.local_port,10),
-        remote_host: newServer.value.localForward.remote_host,
-        remote_port: parseInt(newServer.value.localForward.remote_port,10)
+
+    if (newServer.value.localForward === null) {
+      localForward = null
+    } else {
+      // 确保本地转发配置完整
+      if (
+        (newServer.value.localForward.local_port !== '' || newServer.value.localForward.local_port === null) && 
+        (newServer.value.localForward.remote_host !== '' || newServer.value.localForward.remote_host === null) && 
+        (newServer.value.localForward.remote_port !== '' || newServer.value.localForward.remote_port === null)
+      ) {
+        localForward = {
+          local_port: parseInt(newServer.value.localForward.local_port, 10),
+          remote_host: newServer.value.localForward.remote_host,
+          remote_port: parseInt(newServer.value.localForward.remote_port, 10)
+        }
       }
     }
+
     console.log('本地转发配置:', localForward)
-    if (localForward === null && (dynamicForward === null || dynamicForward === '')) {
+    if (localForward === null && dynamicForward === null) {
       showMessage('错误', '转发配置不完整，动态转发或者本地转发二选一必须填写一个')
       return
     }

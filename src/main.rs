@@ -62,7 +62,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 fn display_table(servers: &[ServerConfig]) -> Result<(), Box<dyn Error>> {
     let mut t = Table::new();
     t.set_format(*format::consts::FORMAT_NO_LINESEP_WITH_TITLE);
-    t.set_titles(row!["ID", "连接目标", "组", "标签", "主机标签"]);
+    t.set_titles(row!["ID", "连接目标", "组", "标签", "主机标签", "ForwardAgent", "DynamicForward", "LocalForward", "ProxyJump"]);
     for (i, server) in servers.iter().enumerate() {
         let tags = &server.tags.join(",");
         t.add_row(row![
@@ -71,6 +71,10 @@ fn display_table(servers: &[ServerConfig]) -> Result<(), Box<dyn Error>> {
             if server.group.is_empty() { "N/A" } else { &server.group }.to_string(),
             if server.tags.is_empty() { "N/A" } else { tags }.to_string(),
             server.host_tag.clone(),
+            if server.forward_agent { "Yes" } else { "No" }.to_string(),
+            server.dynamic_forward.clone().unwrap_or_else(|| "N/A".to_string()),
+            server.local_forward.as_ref().map_or("N/A".to_string(), |lf| format!("{} {}:{}", lf.local_port, lf.remote_host, lf.remote_port)),
+            server.proxy_jump.clone().unwrap_or_else(|| "N/A".to_string())
         ]);
     }
     t.printstd();

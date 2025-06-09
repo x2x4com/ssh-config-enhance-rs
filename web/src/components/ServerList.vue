@@ -177,7 +177,13 @@
             <label>
               Forward Agent
             </label>
-            <input type="checkbox" v-model="newServer.forwardAgent">
+            <input type="checkbox" v-model="newServer.forwardAgent" placeholder="Forward Agent, 打开后将启用转发代理功能">
+          </div>
+          <div class="form-group">
+            <label>
+              Enable Port Forward
+            </label>
+            <input type="checkbox" v-model="newServer.isEnablePortForward" placeholder="Forward Agent, 打开后将启用转发代理功能">
           </div>
           <div class="form-group">
             <label>Dynamic Forward</label>
@@ -302,7 +308,11 @@
           </div>
           <div class="form-group">
             <label>Forward Agent</label>
-            <input type="checkbox" v-model="editingServer.data.forwardAgent">
+            <input type="checkbox" v-model="editingServer.data.forwardAgent" placeholder="Forward Agent, 打开后将启用转发代理功能">
+          </div>
+          <div class="form-group">
+            <label>Enable Port Forward</label>
+            <input type="checkbox" v-model="editingServer.data.isEnablePortForward" placeholder="是否启用端口转发功能">
           </div>
           <div class="form-group">
             <label>Dynamic Forward</label>
@@ -400,6 +410,7 @@ const newServer = ref({
   group: '',
   tagsInput: '',
   forwardAgent: false,
+  isEnablePortForward: false,
   dynamicForward: '',
   localForward: {
     local_port: '',
@@ -592,7 +603,8 @@ const editingServer = ref({
     },
     forwardAgent: false,
     dynamicForward: '',
-    proxyJump: ''
+    proxyJump: '',
+    isEnablePortForward: false,
   }
 })
 
@@ -601,6 +613,10 @@ function edit(server, index) {
   if (isFiltered.value) {
     showMessage('操作禁止', '过滤状态下不能编辑服务器')
     return
+  }
+  let isEnablePortForward = false
+  if (server.dynamic_forward || server.local_forward) {
+    isEnablePortForward = true
   }
   console.log('编辑服务器:', server)
   editingServer.value = {
@@ -615,7 +631,8 @@ function edit(server, index) {
         remote_host: '',
         remote_port: ''
       },
-      proxyJump: server.proxy_jump || ''
+      proxyJump: server.proxy_jump || '',
+      isEnablePortForward
     }
   }
   showEditServerForm.value = true
@@ -633,7 +650,7 @@ async function saveEditedServer() {
   let dynamicForward = null
   let proxyJump = null
 
-  if (editingServer.value.data.forwardAgent) {
+  if (editingServer.value.data.isEnablePortForward) {
     dynamicForward = editingServer.value.data.dynamicForward
     console.log('server local forward:', editingServer.value.data.localForward)
     if (editingServer.value.data.localForward === '' || editingServer.value.data.localForward === null) {
@@ -683,6 +700,7 @@ async function saveEditedServer() {
       group: '',
       tagsInput: '',
       forwardAgent: false,
+      isEnablePortForward: false,
       dynamicForward: '',
       localForward: {
         local_port: '',
@@ -711,7 +729,7 @@ async function addNewServer() {
   let localForward = null
   let dynamicForward = null
   let proxyJump = null
-  if (newServer.value.forwardAgent) {
+  if (newServer.value.isEnablePortForward) {
     dynamicForward = newServer.value.dynamicForward
     console.log('server local forward:', newServer.value.localForward)
     if (newServer.value.localForward.local_port !== '' && newServer.value.localForward.remote_host !== '' && newServer.value.localForward.remote_port !== '') {
@@ -758,6 +776,7 @@ function resetNewServerForm() {
     group: '',
     tagsInput: '',
     forwardAgent: false,
+    isEnablePortForward: false,
     dynamicForward: '',
     localForward: {
       local_port: '',

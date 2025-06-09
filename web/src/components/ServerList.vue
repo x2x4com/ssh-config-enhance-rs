@@ -88,7 +88,7 @@
               <td>
                 <button @click="connect(server)" class="add-button">连接</button>
                 <button @click="edit(server, index)" class="save-button">编辑</button>
-                <button @click="removeServer(index)" class="delete-button">删除</button>
+                <button @click="confirmDelete(index)" class="delete-button">删除</button>
               </td>
             </tr>
           </tbody>
@@ -137,7 +137,7 @@
           <div class="card-actions">
             <button @click="connect(server)" class="add-button">连接</button>
             <button @click="edit(server)" class="save-button">编辑</button>
-            <button @click="removeServer(index)" class="delete-button">删除</button>
+            <button @click="confirmDelete(index)" class="delete-button">删除</button>
           </div>
         </div>
       </div>
@@ -265,7 +265,7 @@
           <p>{{ messageModal.message }}</p>
         </div>
         <div class="message-footer">
-          <button @click="closeMessageModal" class="confirm-button">确认</button>
+          <button @click="handleMessageConfirm" class="confirm-button">确认</button>
         </div>
       </div>
     </div>
@@ -347,6 +347,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import * as tauriapi from '@tauri-apps/api';
+import { show } from '@tauri-apps/api/app';
 
 // 配置数据
 const configData = ref({
@@ -430,15 +431,45 @@ const messageModal = ref({
   message: ''
 })
 
+// 删除确认状态
+const pendingDeleteIndex = ref(-1)
+
 // 显示消息模态框
 function showMessage(title, message) {
   messageModal.value = { title, message }
   showMessageModal.value = true
 }
 
+// 显示删除确认对话框
+function confirmDelete(index) {
+  if (isFiltered.value) {
+    showMessage('操作禁止', '过滤状态下不能删除服务器')
+    return
+  }
+  const server = configData.value.servers[index]
+  pendingDeleteIndex.value = index
+  showMessage('确认删除', `确定要删除服务器 ${server.host_tag} (${server.user}@${server.hostname}) 吗?`)
+}
+
+// 执行删除操作
+async function removeServer(index) {
+  if (isFiltered.value) {
+    showMessage('操作禁止', '过滤状态下不能删除服务器')
+    return
+  }
+  try {
+    configData.value.servers.splice(index, 1)
+    await saveConfig()
+    showMessage('成功', '服务器已删除')
+  } catch (error) {
+    showMessage('错误', `删除服务器失败: ${error}`)
+  }
+}
+
 // 关闭消息模态框
 function closeMessageModal() {
   showMessageModal.value = false
+  pendingDeleteIndex.value = -1
 }
 
 // 加载配置
@@ -476,6 +507,14 @@ async function saveConfig() {
     console.error('保存配置失败:', error)
     showMessage('错误', '保存配置失败: ' + error)
   }
+}
+
+// 处理消息确认
+function handleMessageConfirm() {
+  if (pendingDeleteIndex.value !== -1) {
+    removeServer(pendingDeleteIndex.value)
+  }
+  closeMessageModal()
 }
 
 // 添加全局配置
@@ -571,7 +610,11 @@ function edit(server, index) {
       tagsInput: server.tags ? server.tags.join(', ') : '',
       forwardAgent: server.forward_agent || false,
       dynamicForward: server.dynamic_forward || '',
-      localForward: server.local_forward || '',
+      localForward: server.local_forward || {
+        local_port: '',
+        remote_host: '',
+        remote_port: ''
+      },
       proxyJump: server.proxy_jump || ''
     }
   }
@@ -586,6 +629,35 @@ async function saveEditedServer() {
     ? editingServer.value.data.tagsInput.split(',').map(tag => tag.trim())
     : []
   
+  let localForward = null
+  let dynamicForward = null
+  let proxyJump = null
+
+  if (editingServer.value.data.forwardAgent) {
+    dynamicForward = editingServer.value.data.dynamicForward
+    console.log('server local forward:', editingServer.value.data.localForward)
+    if (editingServer.value.data.localForward === '' || editingServer.value.data.localForward === null) {
+      localForward = null
+    } else {
+      if (
+      (editingServer.value.data.localForward.local_port !== '' || editingServer.value.data.localForward.local_port === null) && 
+      (editingServer.value.data.localForward.remote_host !== '' || editingServer.value.data.localForward.remote_host === null) && 
+      (editingServer.value.data.localForward.remote_port !== '' || editingServer.value.data.localForward.remote_port === null)) {
+      localForward = {
+        local_port: parseInt(editingServer.value.data.localForward.local_port, 10),
+        remote_host: editingServer.value.data.localForward.remote_host,
+        remote_port: parseInt(editingServer.value.data.localForward.remote_port, 10)
+      }
+    }
+    }
+    
+    console.log('本地转发配置:', localForward)
+    if (localForward === null && (dynamicForward === null || dynamicForward === '')) {
+      showMessage('错误', '转发配置不完整，动态转发或者本地转发二选一必须填写一个')
+      return
+    }
+  }
+  
   // 更新服务器数据
   configData.value.servers[editingServer.value.index] = {
   host_tag: editingServer.value.data.host_tag,
@@ -595,9 +667,9 @@ async function saveEditedServer() {
   group: editingServer.value.data.group,
   tags: tags,
   forward_agent: editingServer.value.data.forwardAgent,
-  dynamic_forward: editingServer.value.data.dynamicForward || null,
-  local_forward: editingServer.value.data.localForward || null,
-  proxy_jump: editingServer.value.data.proxyJump || null
+  dynamic_forward: dynamicForward,
+  local_forward: localForward,
+  proxy_jump: proxyJump
   }
   
   // 重置表单并关闭
@@ -609,7 +681,15 @@ async function saveEditedServer() {
       user: '',
       port: 22,
       group: '',
-      tagsInput: ''
+      tagsInput: '',
+      forwardAgent: false,
+      dynamicForward: '',
+      localForward: {
+        local_port: '',
+        remote_host: '',
+        remote_port: ''
+      },
+      proxyJump: ''
     }
   }
   showEditServerForm.value = false
@@ -624,7 +704,29 @@ async function addNewServer() {
   const tags = newServer.value.tagsInput
     ? newServer.value.tagsInput.split(',').map(tag => tag.trim())
     : []
-  
+  if (newServer.value.localForward.local_port != '') {
+    // change string to int
+    newServer.value.localForward.local_port = parseInt(newServer.value.localForward.local_port, 10)
+  }
+  let localForward = null
+  let dynamicForward = null
+  let proxyJump = null
+  if (newServer.value.forwardAgent) {
+    dynamicForward = newServer.value.dynamicForward
+    console.log('server local forward:', newServer.value.localForward)
+    if (newServer.value.localForward.local_port !== '' && newServer.value.localForward.remote_host !== '' && newServer.value.localForward.remote_port !== '') {
+      localForward = {
+        local_port: parseInt(newServer.value.localForward.local_port,10),
+        remote_host: newServer.value.localForward.remote_host,
+        remote_port: parseInt(newServer.value.localForward.remote_port,10)
+      }
+    }
+    console.log('本地转发配置:', localForward)
+    if (localForward === null && (dynamicForward === null || dynamicForward === '')) {
+      showMessage('错误', '转发配置不完整，动态转发或者本地转发二选一必须填写一个')
+      return
+    }
+  }
   // 添加新服务器
   configData.value.servers.push({
     host_tag: newServer.value.host_tag,
@@ -634,9 +736,9 @@ async function addNewServer() {
     group: newServer.value.group,
     tags: tags,
     forward_agent: newServer.value.forwardAgent,
-    dynamic_forward: newServer.value.dynamicForward || null,
-    local_forward: newServer.value.localForward || null,
-    proxy_jump: newServer.value.proxyJump || null
+    dynamic_forward: dynamicForward,
+    local_forward: localForward,
+    proxy_jump: proxyJump
   })
   
   // 重置表单并关闭
@@ -647,16 +749,6 @@ async function addNewServer() {
   await saveConfig()
 }
 
-// 删除服务器配置项
-async function removeServer(index) {
-  if (isFiltered.value) {
-    showMessage('操作禁止', '过滤状态下不能删除服务器')
-    return
-  }
-  configData.value.servers.splice(index, 1)
-  await saveConfig()
-}
-
 function resetNewServerForm() {
   newServer.value = {
     host_tag: '',
@@ -664,8 +756,16 @@ function resetNewServerForm() {
     user: '',
     port: 22,
     group: '',
-    tagsInput: ''
-  }
+    tagsInput: '',
+    forwardAgent: false,
+    dynamicForward: '',
+    localForward: {
+      local_port: '',
+      remote_host: '',
+      remote_port: ''
+    },
+    proxyJump: ''
+    }
 }
 
 // 组件挂载时加载配置

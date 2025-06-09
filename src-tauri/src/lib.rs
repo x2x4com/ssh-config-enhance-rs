@@ -91,5 +91,6 @@ fn get_servers(group: Option<&str>, tags: Option<&str>) -> Result<ssh_config_enh
 fn save_servers(config: ssh_config_enhance::ParsedConfig) -> Result<(), String> {
     let path = Path::new("./config");
     // let path = get_ssh_config_path().map_err(|e| e.to_string())?;
+    // println!("Saving SSH config: {:?}", &config);
     save_ssh_config(&path, &config).map_err(|e| e.to_string())
 }

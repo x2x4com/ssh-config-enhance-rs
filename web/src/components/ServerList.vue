@@ -175,17 +175,32 @@
           </div>
           <div class="form-group">
             <label>
-              <input type="checkbox" v-model="newServer.forwardAgent">
               Forward Agent
             </label>
+            <input type="checkbox" v-model="newServer.forwardAgent">
           </div>
           <div class="form-group">
             <label>Dynamic Forward</label>
             <input v-model="newServer.dynamicForward" placeholder="e.g. 8080">
           </div>
           <div class="form-group">
-            <label>Local Forward</label>
-            <input v-model="newServer.localForward" placeholder="e.g. 8080:localhost:8080">
+            <div class="form-group">
+              <label>Local Forward</label>
+              <div class="local-forward-fields">
+                <input v-model="newServer.localForward.local_port"
+                       type="number"
+                       placeholder="本地端口"
+                       class="port-input">
+                <input v-model="newServer.localForward.remote_host"
+                       placeholder="远程主机"
+                       class="host-input">
+                <span>:</span>
+                <input v-model="newServer.localForward.remote_port"
+                       type="number"
+                       placeholder="远程端口"
+                       class="port-input">
+              </div>
+            </div>
           </div>
           <div class="form-group">
             <label>Proxy Jump</label>
@@ -385,7 +400,11 @@ const newServer = ref({
   tagsInput: '',
   forwardAgent: false,
   dynamicForward: '',
-  localForward: '',
+  localForward: {
+    local_port: '',
+    remote_host: '',
+    remote_port: ''
+  },
   proxyJump: ''
 })
 
@@ -534,11 +553,6 @@ const editingServer = ref({
     },
     forwardAgent: false,
     dynamicForward: '',
-    localForward: {
-      local_port: '',
-      remote_host: '',
-      remote_port: ''
-    },
     proxyJump: ''
   }
 })
@@ -618,7 +632,11 @@ async function addNewServer() {
     hostname: newServer.value.hostname,
     port: newServer.value.port || 22,
     group: newServer.value.group,
-    tags: tags
+    tags: tags,
+    forward_agent: newServer.value.forwardAgent,
+    dynamic_forward: newServer.value.dynamicForward || null,
+    local_forward: newServer.value.localForward || null,
+    proxy_jump: newServer.value.proxyJump || null
   })
   
   // 重置表单并关闭

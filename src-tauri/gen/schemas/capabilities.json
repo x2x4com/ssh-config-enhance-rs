@@ -1,1 +1,1 @@
-{}
+{"main-capability":{"identifier":"main-capability","description":"Capability for the main window","local":true,"windows":["main"],"permissions":[{"identifier":"shell:allow-execute","allow":[{"args":["-c",{"validator":"\\S+"}],"cmd":"sh","name":"exec-sh"},{"args":["-e",{"validator":"\\S+"}],"cmd":"osascript","name":"exec-osascript"},{"args":[{"validator":"\\S+"}],"cmd":"ssh","name":"exec-ssh"}]}]}}

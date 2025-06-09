@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "SSH配置管理器",
+        "title": "SSH Config Manager",
         "width": 800,
         "height": 600,
         "resizable": true,

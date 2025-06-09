@@ -11,6 +11,7 @@ use std::error::Error;
 use std::process::exit;
 use ssh_config_enhance::{ServerConfig, parse_ssh_config, filter_servers, get_ssh_config_path, connect_to_server};
 use std::io::Write;
+use std::path::PathBuf;
 
 #[derive(Parser, Debug)]
 #[clap(version = "3.3", about = "SSH配置管理工具")]
@@ -20,6 +21,9 @@ struct Cli {
     
     #[clap(short = 't', long, help = "按标签过滤服务器")]
     tags: Option<String>,
+
+    #[clap(long = "sshconfig", help = "ssh config位置", default_value = get_ssh_config_path().unwrap().into_os_string())]
+    ssh_config: PathBuf,
     
     #[clap(short = 'c', long, help = "使用选择器界面", default_value_t = false)]
     choose: bool,
@@ -29,7 +33,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let args = Cli::parse();
     
     // 获取SSH配置文件路径
-    let ssh_config = get_ssh_config_path()?;
+    let ssh_config = args.ssh_config;
     
     // 解析配置文件
     let servers = parse_ssh_config(&ssh_config)?;

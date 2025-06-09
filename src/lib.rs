@@ -7,6 +7,13 @@ use std::error::Error;
 use directories::UserDirs;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalForward {
+    pub local_port: u16,
+    pub remote_host: String,
+    pub remote_port: u16,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServerConfig {
     pub host_tag: String,
     pub user: String,
@@ -14,6 +21,10 @@ pub struct ServerConfig {
     pub port: u16,
     pub group: String,
     pub tags: Vec<String>,
+    pub forward_agent: bool,
+    pub dynamic_forward: Option<String>,
+    pub local_forward: Option<LocalForward>,
+    pub proxy_jump: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -29,7 +40,7 @@ pub fn parse_ssh_config(path: &Path) -> Result<ParsedConfig, Box<dyn Error>> {
     
     // 预编译正则表达式
     let re_host = Regex::new(r"(?i)^host\s+(\S+)")?;
-    let re_config = Regex::new(r"(?i)^\s*(\S+)\s+(\S+)")?;
+    let re_config = Regex::new(r"(?i)^\s*(\S+)\s+(.+)")?;
     let re_group = Regex::new(r"(?i)^\s*#\s*group\s+([^\s#]+)")?;
     let re_tags = Regex::new(r"(?i)^\s*#\s*tags\s+([^#]+)")?;
     
@@ -68,6 +79,10 @@ pub fn parse_ssh_config(path: &Path) -> Result<ParsedConfig, Box<dyn Error>> {
                 port: 22,
                 group: String::new(),
                 tags: Vec::new(),
+                forward_agent: false,
+                dynamic_forward: None,
+                local_forward: None,
+                proxy_jump: None,
             });
             continue;
         }
@@ -99,6 +114,29 @@ pub fn parse_ssh_config(path: &Path) -> Result<ParsedConfig, Box<dyn Error>> {
                     "user" => server.user = value,
                     "hostname" => server.hostname = value,
                     "port" => server.port = value.parse().unwrap_or(22),
+                    "forwardagent" => server.forward_agent = value.to_lowercase() == "yes",
+                    "dynamicforward" => server.dynamic_forward = Some(value),
+                    "localforward" => {
+                        // println!("Parsing LocalForward: {}", value);
+                        let parts: Vec<&str> = value.splitn(2, ' ').collect();
+                        // println!("LocalForward parts: {:?}", parts);
+                        if parts.len() == 2 {
+                            if let Ok(local_port) = parts[0].parse::<u16>() {
+                                let remote_parts: Vec<&str> = parts[1].splitn(2, ':').collect();
+                                if remote_parts.len() == 2 {
+                                    if let Ok(remote_port) = remote_parts[1].parse::<u16>() {
+                                        // println!("Parsed LocalForward: {} {}:{}", local_port, remote_parts[0], remote_port);
+                                        server.local_forward = Some(LocalForward {
+                                            local_port,
+                                            remote_host: remote_parts[0].to_string(),
+                                            remote_port,
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "proxyjump" => server.proxy_jump = Some(value),
                     _ => {} // 忽略其他配置
                 }
             }
@@ -142,12 +180,25 @@ pub fn save_ssh_config(path: &Path, config: &ParsedConfig) -> Result<(), Box<dyn
         if server.port != 22 {
             writeln!(file, "    Port {}", server.port)?;
         }
+        if server.forward_agent {
+            writeln!(file, "    ForwardAgent yes")?;
+        }
+        if let Some(dynamic) = &server.dynamic_forward {
+            writeln!(file, "    DynamicForward {}", dynamic)?;
+        }
+        if let Some(local) = &server.local_forward {
+            writeln!(file, "    LocalForward {} {}:{}",
+                local.local_port, local.remote_host, local.remote_port)?;
+        }
+        if let Some(proxy) = &server.proxy_jump {
+            writeln!(file, "    ProxyJump {}", proxy)?;
+        }
         if !server.group.is_empty() {
-            writeln!(file, "    # Group {}", server.group)?;
+            writeln!(file, "# Group {}", server.group)?;
         }
         if !server.tags.is_empty() {
             let tags = server.tags.join(" ");
-            writeln!(file, "    # Tags {}", tags)?;
+            writeln!(file, "# Tags {}", tags)?;
         }
         writeln!(file)?;
     }

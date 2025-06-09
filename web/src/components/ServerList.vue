@@ -120,6 +120,18 @@
                 </span>
               </span>
             </div>
+            <div class="info-row" v-if="server.forward_agent || server.dynamic_forward || server.local_forward || server.proxy_jump">
+              <span class="label">转发:</span>
+              <span>
+                <span v-if="server.forward_agent" class="tag">Agent</span>
+                <span v-if="server.dynamic_forward" class="tag">Dyn:{{ server.dynamic_forward }}</span>
+                <span v-if="server.local_forward" class="tag">
+                  Loc:{{ typeof server.local_forward === 'string' ? server.local_forward :
+                    `${server.local_forward.local_port}:${server.local_forward.remote_host}:${server.local_forward.remote_port}` }}
+                </span>
+                <span v-if="server.proxy_jump" class="tag">Jump:{{ server.proxy_jump }}</span>
+              </span>
+            </div>
           </div>
           
           <div class="card-actions">
@@ -160,6 +172,24 @@
           <div class="form-group">
             <label>标签 (逗号分隔):</label>
             <input v-model="newServer.tagsInput" />
+          </div>
+          <div class="form-group">
+            <label>
+              <input type="checkbox" v-model="newServer.forwardAgent">
+              Forward Agent
+            </label>
+          </div>
+          <div class="form-group">
+            <label>Dynamic Forward</label>
+            <input v-model="newServer.dynamicForward" placeholder="e.g. 8080">
+          </div>
+          <div class="form-group">
+            <label>Local Forward</label>
+            <input v-model="newServer.localForward" placeholder="e.g. 8080:localhost:8080">
+          </div>
+          <div class="form-group">
+            <label>Proxy Jump</label>
+            <input v-model="newServer.proxyJump" placeholder="e.g. jump-host">
           </div>
           <button type="submit">保存</button>
         </form>
@@ -255,6 +285,37 @@
             <label>标签(逗号分隔)</label>
             <input v-model="editingServer.data.tagsInput">
           </div>
+          <div class="form-group">
+            <label>Forward Agent</label>
+            <input type="checkbox" v-model="editingServer.data.forwardAgent">
+          </div>
+          <div class="form-group">
+            <label>Dynamic Forward</label>
+            <input v-model="editingServer.data.dynamicForward" placeholder="e.g. 8080">
+          </div>
+          <div class="form-group">
+            <div class="form-group">
+              <label>Local Forward</label>
+              <div class="local-forward-fields">
+                <input v-model="editingServer.data.localForward.local_port"
+                       type="number"
+                       placeholder="本地端口"
+                       class="port-input">
+                <input v-model="editingServer.data.localForward.remote_host"
+                       placeholder="远程主机"
+                       class="host-input">
+                <span>:</span>
+                <input v-model="editingServer.data.localForward.remote_port"
+                       type="number"
+                       placeholder="远程端口"
+                       class="port-input">
+              </div>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Proxy Jump</label>
+            <input v-model="editingServer.data.proxyJump" placeholder="e.g. jump-host">
+          </div>
           <div class="form-actions">
             <button @click="showEditServerForm = false" class="delete-button">取消</button>
             <button class="add-button">保存</button>
@@ -321,7 +382,11 @@ const newServer = ref({
   user: '',
   port: 22,
   group: '',
-  tagsInput: ''
+  tagsInput: '',
+  forwardAgent: false,
+  dynamicForward: '',
+  localForward: '',
+  proxyJump: ''
 })
 
 // 新全局配置表单状态
@@ -443,8 +508,12 @@ async function removeGlobalConfig(index) {
 
 // 连接服务器
 async function connect(server) {
-  console.log('连接到服务器:', server.host_tag)
-  // TODO: 调用Tauri命令连接
+  try {
+    console.log('连接到服务器:', server.host_tag)
+    await tauriapi.core.invoke('connect_to_host', { host: server.host_tag })
+  } catch (error) {
+    showMessage('连接失败', `无法连接到 ${server.host_tag}: ${error}`)
+  }
 }
 
 // 编辑服务器状态
@@ -457,7 +526,20 @@ const editingServer = ref({
     user: '',
     port: 22,
     group: '',
-    tagsInput: ''
+    tagsInput: '',
+    localForward: {
+      local_port: '',
+      remote_host: '',
+      remote_port: ''
+    },
+    forwardAgent: false,
+    dynamicForward: '',
+    localForward: {
+      local_port: '',
+      remote_host: '',
+      remote_port: ''
+    },
+    proxyJump: ''
   }
 })
 
@@ -467,12 +549,16 @@ function edit(server, index) {
     showMessage('操作禁止', '过滤状态下不能编辑服务器')
     return
   }
-  console.log('编辑服务器:', server.host_tag)
+  console.log('编辑服务器:', server)
   editingServer.value = {
     index,
     data: {
       ...server,
-      tagsInput: server.tags ? server.tags.join(', ') : ''
+      tagsInput: server.tags ? server.tags.join(', ') : '',
+      forwardAgent: server.forward_agent || false,
+      dynamicForward: server.dynamic_forward || '',
+      localForward: server.local_forward || '',
+      proxyJump: server.proxy_jump || ''
     }
   }
   showEditServerForm.value = true
@@ -488,12 +574,16 @@ async function saveEditedServer() {
   
   // 更新服务器数据
   configData.value.servers[editingServer.value.index] = {
-    host_tag: editingServer.value.data.host_tag,
-    user: editingServer.value.data.user,
-    hostname: editingServer.value.data.hostname,
-    port: editingServer.value.data.port || 22,
-    group: editingServer.value.data.group,
-    tags: tags
+  host_tag: editingServer.value.data.host_tag,
+  user: editingServer.value.data.user,
+  hostname: editingServer.value.data.hostname,
+  port: editingServer.value.data.port || 22,
+  group: editingServer.value.data.group,
+  tags: tags,
+  forward_agent: editingServer.value.data.forwardAgent,
+  dynamic_forward: editingServer.value.data.dynamicForward || null,
+  local_forward: editingServer.value.data.localForward || null,
+  proxy_jump: editingServer.value.data.proxyJump || null
   }
   
   // 重置表单并关闭

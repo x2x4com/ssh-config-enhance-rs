@@ -9,7 +9,7 @@ tauri-build = "2.0.0"  # Tauri构建依赖
 [dependencies]
 regex = "1.5"
 prettytable-rs = "0.10"
-clap = { version = "4.5", features = ["derive"] }
+clap = { version = "4.5", features = ["derive", "string"] }
 directories = "6.0"
 crossterm = "0.29"
 ctrlc = "3.0"

@@ -153,6 +153,15 @@ pub fn parse_ssh_config(path: &Path) -> Result<ParsedConfig, Box<dyn Error>> {
 
 /// 保存SSH配置
 pub fn save_ssh_config(path: &Path, config: &ParsedConfig) -> Result<(), Box<dyn Error>> {
+    // 这里有个逻辑问题，如果是没有注释标签的内容会被过滤掉，导致一旦被保存就丢失了
+    // 在保存前应该再拉一份当前的内容，把没有注释的内容与提交过来的内容合并在一起保存
+    let old_config = parse_ssh_config(path)?;
+    // find all server without tags or group
+    let mut config = config.clone();
+    config.servers.extend(
+        old_config.servers.into_iter()
+            .filter(|s| s.group.is_empty() && s.tags.is_empty())
+    );
     let mut file = OpenOptions::new()
         .write(true)
         .truncate(true)
